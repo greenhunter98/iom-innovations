@@ -1,6 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { DarkToaster } from "@/components/DarkToaster"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 export const metadata: Metadata = {
   title: {
@@ -51,6 +52,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="bg-gray-50 text-gray-900">{children}
         <DarkToaster />
+        <SpeedInsights />
       </body>
     </html>
   );
