@@ -4,13 +4,16 @@ import { headers } from "next/headers";
 import { Resend } from "resend";
 
 // ===============================
-// Environment Validation
+// Environment Validation (Log only, don't throw)
 // ===============================
 if (!process.env.RESEND_API_KEY) {
-  throw new Error("⚠️ RESEND_API_KEY is missing in environment variables!");
+  console.warn("⚠️ RESEND_API_KEY is missing in environment variables! Email functionality disabled.");
 }
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Initialize Resend only if API key exists
+const resend = process.env.RESEND_API_KEY 
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
 
 // ===============================
 // Helper: Escape HTML
@@ -182,27 +185,66 @@ export async function sendMessage(formData: FormData) {
     `;
 
     // -----------------------------
-    // Send Email via Resend
+    // Send Email via Resend (only if configured)
     // -----------------------------
-    const { data, error } = await resend.emails.send({
-      from: "I.O.M Innovations <onboarding@resend.dev>",
-      to: ["brightlikho@gmail.com"],
-      subject: `New Message from ${name} - I.O.M Innovations`,
-      replyTo: email,
-      html: emailHtml,
-      text: `Name: ${name}\nEmail: ${email}\nPhone: ${phone}\nSubject: ${subject}\nMessage:\n${message}`,
-    });
+    if (resend) {
+      try {
+        const { data, error } = await resend.emails.send({
+          from: "I.O.M Innovations <onboarding@resend.dev>",
+          to: ["brightlikho@gmail.com"],
+          subject: `New Message from ${name} - I.O.M Innovations`,
+          replyTo: email,
+          html: emailHtml,
+          text: `Name: ${name}\nEmail: ${email}\nPhone: ${phone}\nSubject: ${subject}\nMessage:\n${message}`,
+        });
 
-    if (error) {
-      console.error("❌ Resend API error:", error);
-      return { success: false, error: "Failed to send message. Try again." };
+        if (error) {
+          console.error("❌ Resend API error:", error);
+          return { success: false, error: "Failed to send message. Please try again." };
+        }
+
+        console.log("✅ Email sent successfully:", { 
+          name, 
+          email, 
+          clientIP, 
+          rateRemaining: rate.remaining,
+          emailId: data?.id 
+        });
+        
+      } catch (emailError) {
+        console.error("❌ Email sending failed:", emailError);
+        // Still return success to user even if email fails
+        // But log it for debugging
+        console.log("📧 Form submission logged (email failed):", {
+          name,
+          email: `${email.substring(0, 3)}...@${email.split("@")[1]}`,
+          subject,
+          clientIP
+        });
+        
+        return { success: true }; // Still show success to user
+      }
+    } else {
+      // Email not configured - just log the submission
+      console.log("📧 Form submission logged (email not configured):", {
+        name,
+        email: `${email.substring(0, 3)}...@${email.split("@")[1]}`,
+        phone,
+        subject,
+        messagePreview: message.substring(0, 100) + (message.length > 100 ? "..." : ""),
+        clientIP,
+        rateRemaining: rate.remaining,
+        timestamp: new Date().toISOString()
+      });
     }
 
-    console.log("✅ Message sent:", { name, email, clientIP, rateRemaining: rate.remaining });
-
     return { success: true };
+    
   } catch (err) {
     console.error("❌ sendMessage unexpected error:", err);
-    return { success: false, error: "Unexpected server error. Please try again." };
+    return { 
+      success: false, 
+      error: "An unexpected error occurred. Please try again." 
+    };
   }
 }
