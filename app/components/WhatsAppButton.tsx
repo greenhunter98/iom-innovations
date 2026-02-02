@@ -75,7 +75,7 @@ export default function WhatsAppButton() {
       }`}>
         <div className="absolute top-1/2 right-0 transform translate-x-1/2 -translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
         <div className="flex items-center gap-2">
-          <span className="font-bold text-green-400">+265 888 665 477</span>
+          <span className="font-bold text-green-400">+265882131909</span>
           <span className="text-gray-300">• Quick response</span>
         </div>
       </div>
