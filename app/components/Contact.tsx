@@ -13,6 +13,7 @@ import {
   Sparkles,
   Shield,
   CheckCircle,
+  Heart,
   ArrowRight
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -187,6 +188,10 @@ export default function Contact() {
 
               <CardContent className="pt-6 sm:pt-8">
                 <form action={handleSubmit} className="space-y-4 sm:space-y-6">
+                  {/* Honeypot fields */}
+                  <input type="text" name="website" className="hidden" tabIndex={-1} autoComplete="off" />
+                  <input type="text" name="company" className="hidden" tabIndex={-1} autoComplete="off" />
+                  
                   <div className="grid sm:grid-cols-2 gap-4 sm:gap-6">
                     <div className="space-y-2 sm:space-y-3">
                       <label className="text-xs sm:text-sm font-medium text-white">
@@ -212,6 +217,17 @@ export default function Contact() {
                         className="bg-gray-900/50 border-gray-700 text-white h-9 sm:h-10 md:h-11 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-sm sm:text-base"
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-2 sm:space-y-3">
+                    <label className="text-xs sm:text-sm font-medium text-white">
+                      Phone <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+                    </label>
+                    <Input
+                      name="phone"
+                      placeholder="+265 XXX XXX XXX"
+                      className="bg-gray-900/50 border-gray-700 text-white h-9 sm:h-10 md:h-11 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 text-sm sm:text-base"
+                    />
                   </div>
 
                   <div className="space-y-2 sm:space-y-3">

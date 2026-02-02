@@ -17,9 +17,9 @@ export default function Hero() {
   ];
 
   const stats = [
-    { value: "100+", label: "Successful Projects", gradient: "from-blue-500 to-blue-600" },
-    { value: "5+", label: "Years Experience", gradient: "from-cyan-500 to-cyan-600" },
-    { value: "50+", label: "Happy Clients", gradient: "from-indigo-500 to-indigo-600" },
+    { value: "10+", label: "Successful Projects", gradient: "from-blue-500 to-blue-600" },
+    { value: "5+", label: "months Experience", gradient: "from-cyan-500 to-cyan-600" },
+    { value: "10+", label: "Happy Clients", gradient: "from-indigo-500 to-indigo-600" },
   ];
 
   return (

@@ -29,8 +29,8 @@ export default function About() {
   ];
 
   const stats = [
-    { number: "5+", label: "Years", icon: <Award className="w-3 h-3 sm:w-4 sm:h-4" /> },
-    { number: "50+", label: "Projects", icon: <Target className="w-3 h-3 sm:w-4 sm:h-4" /> },
+    { number: "5+", label: "months", icon: <Award className="w-3 h-3 sm:w-4 sm:h-4" /> },
+    { number: "10+", label: "Projects", icon: <Target className="w-3 h-3 sm:w-4 sm:h-4" /> },
     { number: "100%", label: "Satisfaction", icon: <Shield className="w-3 h-3 sm:w-4 sm:h-4" /> },
     { number: "24/7", label: "Support", icon: <Users className="w-3 h-3 sm:w-4 sm:h-4" /> },
   ];
@@ -266,7 +266,7 @@ export default function About() {
                       <div key={i} className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 border-2 border-gray-900" />
                     ))}
                   </div>
-                  <span>Trusted by 50+ businesses across Malawi</span>
+                  <span>Trusted by 10+ businesses across Malawi</span>
                 </div>
               </div>
             </div>

@@ -34,7 +34,7 @@ export default function WhatsAppButton() {
       isVisible ? 'translate-y-0 opacity-100' : 'translate-y-20 opacity-0'
     }`}>
       <a
-        href="https://wa.me/265888665477"
+        href="https://wa.me/265882131909"
         target="_blank"
         rel="noopener noreferrer"
         className="relative bg-gradient-to-br from-[#25D366] to-emerald-500 hover:from-emerald-500 hover:to-green-600 text-white p-3 sm:p-3.5 md:p-4 rounded-full shadow-xl md:shadow-2xl flex items-center gap-1.5 sm:gap-2 transition-all duration-300 group hover:scale-105 md:hover:scale-110 hover:shadow-2xl md:hover:shadow-3xl"

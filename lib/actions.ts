@@ -1,277 +1,208 @@
-// lib/actions.ts
-"use server";
+'use server';
 
+import { headers } from "next/headers";
 import { Resend } from "resend";
 
-// Initialize Resend with your API key
+// ===============================
+// Environment Validation
+// ===============================
+if (!process.env.RESEND_API_KEY) {
+  throw new Error("⚠️ RESEND_API_KEY is missing in environment variables!");
+}
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ============================================================================
-// TYPES
-// ============================================================================
+// ===============================
+// Helper: Escape HTML
+// ===============================
+function escapeHtml(str: string) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
-export type SendMessageResult = {
-  success: boolean;
-  error?: string;
-};
-
-// ============================================================================
-// RATE LIMITING CONFIGURATION
-// ============================================================================
-
-// In-memory store for rate limiting (for development)
-// For production, consider using Redis or a database
+// ===============================
+// Rate Limiting (Redis + In-Memory fallback)
+// ===============================
 interface RateLimitRecord {
   count: number;
   firstRequest: number;
 }
 
-const rateLimitStore = new Map<string, RateLimitRecord>();
+const IN_MEMORY_RATE_LIMIT_STORE = new Map<string, RateLimitRecord>();
 
-/**
- * Simple rate limiting function
- * Limits: 5 submissions per IP per 15 minutes
- */
-function checkRateLimit(ip: string): { allowed: boolean; remaining: number } {
+async function getRedisClient(): Promise<any | null> {
+  if (!process.env.REDIS_URL) return null;
+  const g = globalThis as any;
+  if (g.__rateLimitRedis) return g.__rateLimitRedis;
+
+  try {
+    const { default: IORedis } = await import("ioredis");
+    const client = new IORedis(process.env.REDIS_URL, { enableReadyCheck: true });
+    g.__rateLimitRedis = client;
+    return client;
+  } catch (err) {
+    console.warn("⚠️ Redis init failed. Falling back to in-memory:", err);
+    return null;
+  }
+}
+
+async function checkRateLimit(ip: string): Promise<{ allowed: boolean; remaining: number }> {
   const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
   const MAX_REQUESTS = 5;
-  
   const now = Date.now();
-  const record = rateLimitStore.get(ip);
-  
+  const windowKey = Math.floor(now / WINDOW_MS);
+
+  const redis = await getRedisClient();
+  if (redis) {
+    try {
+      const key = `rl:${ip}:${windowKey}`;
+      const ttl = Math.ceil(WINDOW_MS / 1000);
+      const count = await redis.incr(key);
+      if (count === 1) await redis.expire(key, ttl);
+      if (count > MAX_REQUESTS) return { allowed: false, remaining: 0 };
+      return { allowed: true, remaining: MAX_REQUESTS - count };
+    } catch (err) {
+      console.warn("⚠️ Redis rate limit failed, using memory:", err);
+    }
+  }
+
+  const recordKey = `${ip}:${windowKey}`;
+  const record = IN_MEMORY_RATE_LIMIT_STORE.get(recordKey);
+
   if (!record) {
-    rateLimitStore.set(ip, { count: 1, firstRequest: now });
+    IN_MEMORY_RATE_LIMIT_STORE.set(recordKey, { count: 1, firstRequest: now });
     return { allowed: true, remaining: MAX_REQUESTS - 1 };
   }
-  
-  if (now - record.firstRequest > WINDOW_MS) {
-    rateLimitStore.set(ip, { count: 1, firstRequest: now });
-    return { allowed: true, remaining: MAX_REQUESTS - 1 };
-  }
-  
-  if (record.count >= MAX_REQUESTS) {
-    return { allowed: false, remaining: 0 };
-  }
-  
+
+  if (record.count >= MAX_REQUESTS) return { allowed: false, remaining: 0 };
   record.count++;
-  rateLimitStore.set(ip, record);
-  
+  IN_MEMORY_RATE_LIMIT_STORE.set(recordKey, record);
   return { allowed: true, remaining: MAX_REQUESTS - record.count };
 }
 
-/**
- * Helper to extract IP address
- */
-function getClientIP(): string {
-  if (process.env.NODE_ENV === "development") {
-    return "dev-" + Math.random().toString(36).substring(2, 10);
-  }
+// Cleanup old in-memory records
+if (typeof setInterval !== "undefined") {
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, record] of IN_MEMORY_RATE_LIMIT_STORE.entries()) {
+      if (now - record.firstRequest > 30 * 60 * 1000) { // 30 min
+        IN_MEMORY_RATE_LIMIT_STORE.delete(key);
+      }
+    }
+  }, 5 * 60 * 1000);
+}
 
-  // TODO: Implement real IP extraction in production
+// ===============================
+// Get Client IP
+// ===============================
+async function getClientIP(): Promise<string> {
+  try {
+    const h = await headers();
+    const xff = h.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0].trim();
+    const realIp = h.get("x-real-ip");
+    if (realIp) return realIp;
+    const cfIp = h.get("cf-connecting-ip");
+    if (cfIp) return cfIp;
+  } catch (err) {
+    console.warn("⚠️ Failed to get client IP:", err);
+  }
   return "unknown";
 }
 
-// ============================================================================
-// MAIN SERVER ACTION
-// ============================================================================
-
-export async function sendMessage(formData: FormData): Promise<SendMessageResult> {
-  let clientIP = "";
-  let submissionId = "pending";
-  
+// ===============================
+// Send Message Action
+// ===============================
+export async function sendMessage(formData: FormData) {
   try {
-    clientIP = getClientIP();
-
-    // ========================================
-    // 1. RATE LIMITING
-    // ========================================
-    const rateLimit = checkRateLimit(clientIP);
-    if (!rateLimit.allowed) {
-      console.warn(`🚫 Rate limit exceeded for IP: ${clientIP}`);
-
-      return {
-        success: false,
-        error: "Too many requests. Please try again later.",
-      };
+    // -----------------------------
+    // Honeypot (spam protection)
+    // -----------------------------
+    const website = formData.get("website") as string | null;
+    const company = formData.get("company") as string | null;
+    if (website || company) {
+      console.warn("🤖 Honeypot triggered — bot detected");
+      return { success: true }; // pretend success
     }
 
-    // ========================================
-    // 2. EXTRACT & VALIDATE DATA
-    // ========================================
-    const name = formData.get("name") as string;
-    const email = formData.get("email") as string;
-    const message = formData.get("message") as string;
+    // -----------------------------
+    // Extract & Validate Fields
+    // -----------------------------
+    const nameRaw = formData.get("name") as string | null;
+    const emailRaw = formData.get("email") as string | null;
+    const phoneRaw = formData.get("phone") as string | null;
+    const subjectRaw = formData.get("subject") as string | null;
+    const messageRaw = formData.get("message") as string | null;
 
-    if (!name || !email || !message) {
-      console.error("❌ Missing required fields");
-
-      return {
-        success: false,
-        error: "Missing required fields.",
-      };
+    if (!nameRaw || !emailRaw || !messageRaw) {
+      return { success: false, error: "Missing required fields." };
     }
+
+    const name = escapeHtml(nameRaw.trim());
+    const email = escapeHtml(emailRaw.trim());
+    const phone = phoneRaw ? escapeHtml(phoneRaw.trim()) : "N/A";
+    const subject = subjectRaw ? escapeHtml(subjectRaw.trim()) : "No subject";
+    const message = escapeHtml(messageRaw.trim());
+
+    if (name.length > 100) return { success: false, error: "Name too long" };
+    if (subject.length > 150) return { success: false, error: "Subject too long" };
+    if (message.length > 5000) return { success: false, error: "Message too long" };
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      console.error("❌ Invalid email format:", email);
+    if (!emailRegex.test(email)) return { success: false, error: "Invalid email address" };
 
-      return {
-        success: false,
-        error: "Invalid email address.",
-      };
-    }
+    // -----------------------------
+    // Rate Limiting
+    // -----------------------------
+    const clientIP = await getClientIP();
+    const rate = await checkRateLimit(clientIP);
+    if (!rate.allowed) return { success: false, error: "Too many requests. Try again later." };
 
-    // ========================================
-    // 3. LOG SUBMISSION
-    // ========================================
-    console.log("📧 Form submission received:", {
-      name,
-      email: `${email.substring(0, 3)}...@${email.split("@")[1]}`,
-      messagePreview: message.substring(0, 50) + (message.length > 50 ? "..." : ""),
-      timestamp: new Date().toISOString(),
-      ip: clientIP,
-      rateLimitRemaining: rateLimit.remaining,
-    });
+    const userAgent = (await headers()).get("user-agent") || "unknown";
 
-    // ========================================
-    // 4. PREPARE EMAIL CONTENT
-    // ========================================
-    const currentTime = new Date().toLocaleString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      timeZoneName: "short",
-    });
-
+    // -----------------------------
+    // Prepare Email
+    // -----------------------------
     const emailHtml = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body style="font-family: system-ui, sans-serif; background:#f3f4f6; padding:20px;">
-    <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
-      <div style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:white;padding:24px;text-align:center;">
-        <h1 style="margin:0;">📬 New Contact Form Submission</h1>
-        <p style="margin:6px 0 0;opacity:.9;">I.O.M Innovations Website</p>
-      </div>
+      <h2>📩 New Contact Form Submission</h2>
+      <p><strong>Name:</strong> ${name}</p>
+      <p><strong>Email:</strong> ${email}</p>
+      <p><strong>Phone:</strong> ${phone}</p>
+      <p><strong>Subject:</strong> ${subject}</p>
+      <p><strong>Message:</strong></p>
+      <p>${message.replace(/\n/g, "<br />")}</p>
+      <hr />
+      <p><strong>IP Address:</strong> ${clientIP}</p>
+      <p><strong>User Agent:</strong> ${escapeHtml(userAgent)}</p>
+      <p><strong>Submitted At:</strong> ${new Date().toISOString()}</p>
+    `;
 
-      <div style="padding:24px;">
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
-        <p><strong>Submitted:</strong> ${currentTime}</p>
-
-        <hr style="margin:20px 0;" />
-
-        <p><strong>Message:</strong></p>
-        <p style="white-space:pre-wrap;">${message}</p>
-
-        <hr style="margin:20px 0;" />
-
-        <p style="font-size:12px;color:#6b7280;">
-          Submission ID: ${submissionId}<br />
-          Sent from I.O.M Innovations contact form.
-        </p>
-      </div>
-    </div>
-  </body>
-</html>
-`;
-
-    const emailText = `
-NEW CONTACT FORM SUBMISSION
-===========================
-
-FROM: ${name} (${email})
-SUBMITTED: ${currentTime}
-
-MESSAGE:
-${message}
-
-===========================
-Submission ID: ${submissionId}
-Sent from I.O.M Innovations website
-`;
-
-    // ========================================
-    // 5. SEND EMAIL (RESEND)
-    // ========================================
+    // -----------------------------
+    // Send Email via Resend
+    // -----------------------------
     const { data, error } = await resend.emails.send({
-      from: "I.O.M Innovations Contact Form <onboarding@resend.dev>",
+      from: "I.O.M Innovations <onboarding@resend.dev>",
       to: ["brightlikho@gmail.com"],
       subject: `New Message from ${name} - I.O.M Innovations`,
       replyTo: email,
       html: emailHtml,
-      text: emailText,
+      text: `Name: ${name}\nEmail: ${email}\nPhone: ${phone}\nSubject: ${subject}\nMessage:\n${message}`,
     });
-
-    if (data?.id) {
-      submissionId = data.id;
-    }
 
     if (error) {
-      console.error("❌ Resend API Error:", {
-        error: error.message,
-        statusCode: error.statusCode,
-        ip: clientIP,
-      });
-
-      return {
-        success: false,
-        error: "Failed to send message. Please try again.",
-      };
+      console.error("❌ Resend API error:", error);
+      return { success: false, error: "Failed to send message. Try again." };
     }
 
-    console.log("✅ Email sent successfully:", {
-      emailId: data?.id,
-      ip: clientIP,
-      rateLimitRemaining: rateLimit.remaining,
-      timestamp: new Date().toISOString(),
-    });
+    console.log("✅ Message sent:", { name, email, clientIP, rateRemaining: rate.remaining });
 
-    // ========================================
-    // ✅ SUCCESS
-    // ========================================
-    return {
-      success: true,
-    };
-
-  } catch (error) {
-    console.error("⚠️ Unexpected error in sendMessage:", {
-      error: error instanceof Error ? error.message : String(error),
-      ip: clientIP,
-      submissionId,
-      timestamp: new Date().toISOString(),
-    });
-
-    return {
-      success: false,
-      error: "Unexpected server error. Please try again.",
-    };
+    return { success: true };
+  } catch (err) {
+    console.error("❌ sendMessage unexpected error:", err);
+    return { success: false, error: "Unexpected server error. Please try again." };
   }
-}
-
-// ============================================================================
-// OPTIONAL: CLEAN UP OLD RATE LIMIT RECORDS
-// ============================================================================
-
-if (typeof setInterval !== "undefined") {
-  setInterval(() => {
-    const now = Date.now();
-    const FIFTEEN_MINUTES = 15 * 60 * 1000;
-    
-    for (const [ip, record] of rateLimitStore.entries()) {
-      if (now - record.firstRequest > FIFTEEN_MINUTES * 2) {
-        rateLimitStore.delete(ip);
-      }
-    }
-
-    if (process.env.NODE_ENV === "development") {
-      console.log(`🧹 Cleaned rate limit store. Current size: ${rateLimitStore.size}`);
-    }
-  }, 5 * 60 * 1000);
 }

@@ -197,15 +197,24 @@ export default function Footer() {
           <ScrollToTop />
         </div>
 
-        {/* Made with love */}
-        <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-800 text-center">
-          <div className="inline-flex items-center gap-1.5 sm:gap-2 text-xs text-gray-600">
-            <Sparkles className="w-3 h-3 text-blue-400" />
-            <span>Made with</span>
-            <Heart className="w-3 h-3 text-red-500 fill-current animate-pulse" />
-            <span>in Malawi • Empowering local businesses</span>
-          </div>
-        </div>
+{/* Made with love */}
+<div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-800 text-center">
+  <a 
+    href="https://chipatso-website.vercel.app/" 
+    target="_blank" 
+    rel="noopener noreferrer"
+    className="inline-flex items-center gap-1.5 sm:gap-2 text-xs text-gray-600 hover:text-gray-400 transition-colors group"
+  >
+    <Sparkles className="w-3 h-3 text-blue-400 group-hover:text-blue-300 transition-colors" />
+    <span>Made with</span>
+    <Heart className="w-3 h-3 text-red-500 fill-current animate-pulse" />
+    <span>in Malawi • Empowering local businesses</span>
+    <span className="text-gray-500 group-hover:text-gray-400 transition-colors">•</span>
+    <span className="text-blue-400 group-hover:text-blue-300 transition-colors">
+      Built by Chipatso
+    </span>
+  </a>
+</div>
       </div>
     </footer>
   );

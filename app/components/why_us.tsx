@@ -195,7 +195,7 @@ export default function WhyUs() {
               </div>
               <div className="text-xs sm:text-sm">
                 <span className="font-semibold text-gray-900">Trusted by </span>
-                <span className="text-gray-600">50+ businesses</span>
+                <span className="text-gray-600">10+ businesses</span>
               </div>
             </div>
           </div>
